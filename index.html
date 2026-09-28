@@ -135,9 +135,41 @@
   .room { position: absolute; background: #fff; border: .3vh solid #9fb1c7; border-radius: 1vh;
           display: flex; align-items: center; justify-content: center; font-size: 2.6vh; }
   .room.here { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+
+  /* ---------- SCREENSAVER (attract screen) ---------- */
+  #screensaver {
+    position: fixed; inset: 0; z-index: 100;       /* sits on top of everything */
+    background: linear-gradient(135deg, var(--brand-dark), var(--brand));
+    color: #fff; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+  }
+  #screensaver.on { display: flex; animation: fadeIn .4s ease-out; }
+  #screensaver img {                               /* your static image, full screen */
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover;                             /* fills the screen; use "contain" to show the whole image */
+  }
+  .ss-fallback { font-size: 7vh; font-weight: 700; text-align: center; }   /* shown only if the image is missing */
+  .ss-prompt {
+    position: absolute; bottom: 8vh; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.55); color: #fff; padding: 2vh 4vw; border-radius: 6vh;
+    font-size: 3.6vh; font-weight: 600; white-space: nowrap;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
 </style>
 </head>
 <body>
+<!-- ===================== SCREENSAVER =====================
+     Full-screen static image shown at start-up and after IDLE_SECONDS.
+     Put your image next to index.html and name it screensaver.jpg
+     (1920x1080 for landscape, 1080x1920 for portrait).
+     A tap anywhere closes it and shows Home. -->
+<div id="screensaver" class="on">
+  <div class="ss-fallback">Welcome to Our Department</div>
+  <img src="screensaver.jpg" alt="" onerror="this.remove()">
+  <div class="ss-prompt" id="ssPrompt">Touch anywhere to begin</div>
+</div>
+
 <div class="app">
 
   <header>
@@ -231,8 +263,10 @@
 
 <script>
   /* ================= SETTINGS ================= */
-  var IDLE_SECONDS = 60;      // return to Home after this many seconds with no touch
+  var IDLE_SECONDS = 60;      // return to Home (and the screensaver) after this many seconds with no touch
   var HOME_SCREEN  = "home";  // id of the start screen
+  var USE_SCREENSAVER = true; // false = no screensaver, idle just returns to Home
+  var SHOW_PROMPT     = true; // false = hide the "Touch anywhere to begin" label (e.g. if it's in your image)
 
   /* ================= NAVIGATION ================= */
   var navStack = [];          // screens visited, so Back works
@@ -278,11 +312,24 @@
     }, { passive: true });
   });
 
+  /* ================= SCREENSAVER ================= */
+  var screensaver = document.getElementById("screensaver");
+  if (!USE_SCREENSAVER) screensaver.classList.remove("on");
+  if (!SHOW_PROMPT) document.getElementById("ssPrompt").remove();
+  // A tap on the screensaver only closes it; it never "falls through" to a tile underneath.
+  screensaver.addEventListener("click", function (e) {
+    e.stopPropagation();
+    screensaver.classList.remove("on");
+  });
+
   /* ================= IDLE TIMEOUT ================= */
   var idleTimer;
   function resetIdle() {
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(function () { show(HOME_SCREEN); navStack = []; }, IDLE_SECONDS * 1000);
+    idleTimer = setTimeout(function () {
+      show(HOME_SCREEN); navStack = [];
+      if (USE_SCREENSAVER) screensaver.classList.add("on");
+    }, IDLE_SECONDS * 1000);
   }
   ["pointerdown", "touchstart", "mousedown", "keydown"].forEach(function (evt) {
     document.addEventListener(evt, resetIdle, { passive: true });
