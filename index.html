@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Touch Navigation Demo</title>
+<!--
+  ============================================================
+  APPSPACE TOUCHSCREEN NAVIGATION DEMO  (BrightSign / Bluefin)
+  ------------------------------------------------------------
+  One HTML file, no internet libraries, no build step.
+  How it works:
+    1. Every "screen" is a <section class="screen" id="...">.
+    2. Any element with data-go="screen-id" is a button that
+       shows that screen when touched.
+    3. Only the screen with class "active" is visible.
+    4. After IDLE_SECONDS with no touch, it returns to Home.
+  To customise: edit the SETTINGS block and the HTML screens.
+  ============================================================
+-->
+<style>
+  /* ---------- SETTINGS: colours and fonts ---------- */
+  :root {
+    --brand: #0b5cad;        /* main button colour  */
+    --brand-dark: #073e75;   /* header colour        */
+    --accent: #f2a900;       /* highlight colour     */
+    --bg: #f4f6f9;           /* page background      */
+    --text: #1b2430;         /* text colour          */
+    --card: #ffffff;         /* panel background     */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;                 /* no scroll bars on a kiosk      */
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    user-select: none;                /* no text highlight on long press */
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: none;                     /* hide mouse pointer on the screen. Remove this line while testing on a PC if you like. */
+  }
+
+  /* ---------- Layout: header / content / footer ---------- */
+  .app { display: flex; flex-direction: column; height: 100vh; }
+
+  header {
+    background: var(--brand-dark); color: #fff;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 3vw; height: 11vh; flex: none;
+  }
+  header h1 { font-size: 4.2vh; font-weight: 600; }
+  #clock { font-size: 3.4vh; opacity: .9; }
+
+  main { flex: 1; position: relative; }
+
+  footer {
+    flex: none; height: 12vh; padding: 0 3vw;
+    display: flex; align-items: center; gap: 2vw;
+    background: #e6eaf0;
+  }
+
+  /* ---------- Screens: only .active is shown ---------- */
+  .screen {
+    position: absolute; inset: 0;
+    padding: 4vh 3vw;
+    display: none;
+  }
+  .screen.active { display: block; animation: fadeIn .25s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(1vh); } to { opacity: 1; transform: none; } }
+
+  .screen h2 { font-size: 5.5vh; margin-bottom: 2vh; }
+  .screen p, .screen li { font-size: 3.2vh; line-height: 1.45; }
+
+  /* ---------- Home tiles ---------- */
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 3vh 2vw;
+    height: calc(100% - 10vh);
+  }
+  .tile {
+    background: var(--brand); color: #fff;
+    border: none; border-radius: 2vh;
+    font: inherit; font-size: 5vh; font-weight: 600;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5vh;
+    box-shadow: 0 .6vh 1.5vh rgba(0,0,0,.15);
+    transition: transform .08s, filter .08s;
+  }
+  .tile .icon { width: 10vh; height: 10vh; }
+  .tile small { font-size: 2.6vh; font-weight: 400; opacity: .85; }
+
+  /* ---------- Footer buttons (Home / Back) ---------- */
+  .navbtn {
+    min-width: 18vw; height: 8vh;           /* big touch targets */
+    border: none; border-radius: 1.2vh;
+    background: var(--brand); color: #fff;
+    font: inherit; font-size: 3.2vh; font-weight: 600;
+    transition: transform .08s, filter .08s;
+  }
+  .navbtn.secondary { background: #fff; color: var(--brand); border: .3vh solid var(--brand); }
+  .navbtn[hidden] { display: none; }
+  #idleHint { margin-left: auto; font-size: 2.4vh; color: #5a6577; }
+
+  /* Visual feedback while a finger is on a button */
+  .pressed { transform: scale(.96); filter: brightness(.88); }
+
+  /* ---------- Content panels ---------- */
+  .panel {
+    background: var(--card); border-radius: 2vh; padding: 3vh 2.5vw;
+    box-shadow: 0 .4vh 1.2vh rgba(0,0,0,.08);
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 2vw; }
+  .list li { list-style: none; padding: 1.6vh 0; border-bottom: .15vh solid #e3e7ee; }
+  .list li b { color: var(--brand); }
+
+  /* Directory: buttons that open a detail screen */
+  .people { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2vh 1.5vw; }
+  .person {
+    background: var(--card); border: .3vh solid #d5dbe5; border-radius: 1.6vh;
+    padding: 3vh 1vw; font: inherit; font-size: 3.2vh; color: var(--text); text-align: center;
+    transition: transform .08s, filter .08s;
+  }
+  .person .avatar {
+    width: 11vh; height: 11vh; border-radius: 50%; margin: 0 auto 1.5vh;
+    background: var(--accent); color: #fff; font-size: 4.5vh; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .map {
+    height: 52vh; border-radius: 2vh; background: #dfe7f1; position: relative; overflow: hidden;
+  }
+  .room { position: absolute; background: #fff; border: .3vh solid #9fb1c7; border-radius: 1vh;
+          display: flex; align-items: center; justify-content: center; font-size: 2.6vh; }
+  .room.here { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1 id="siteTitle">Welcome to Our Department</h1>
+    <div id="clock"></div>
+  </header>
+
+  <main>
+
+    <!-- ===================== SCREEN: HOME ===================== -->
+    <section class="screen active" id="home">
+      <h2>Touch a button to get started</h2>
+      <div class="tiles">
+        <button class="tile" data-go="about"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><circle cx="12" cy="7.5" r=".6" fill="currentColor"/></svg>About Us<small>Who we are</small></button>
+        <button class="tile" data-go="events"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>Events<small>What's coming up</small></button>
+        <button class="tile" data-go="directory"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2c3 .2 5.5 2.3 5.5 5.8"/></svg>Directory<small>Find a person</small></button>
+        <button class="tile" data-go="map"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>Map<small>Find a room</small></button>
+      </div>
+    </section>
+
+    <!-- ===================== SCREEN: ABOUT ===================== -->
+    <section class="screen" id="about">
+      <h2>About Us</h2>
+      <div class="panel">
+        <p>Replace this text with a short description of your department, its mission,
+           and how visitors can get help. Keep it short: people read kiosks standing up.</p>
+        <br>
+        <p><b>Hours:</b> Monday to Friday, 8:00 AM to 5:00 PM</p>
+        <p><b>Main office:</b> Room 120</p>
+      </div>
+    </section>
+
+    <!-- ===================== SCREEN: EVENTS ===================== -->
+    <section class="screen" id="events">
+      <h2>Upcoming Events</h2>
+      <div class="panel">
+        <ul class="list">
+          <li><b>Oct 6</b> &nbsp; All-hands meeting, Conference Room A, 10:00 AM</li>
+          <li><b>Oct 14</b> &nbsp; Lunch and learn: New tools, Training Room, 12:00 PM</li>
+          <li><b>Oct 22</b> &nbsp; Team volunteer day, Meet in the lobby, 9:00 AM</li>
+          <li><b>Oct 31</b> &nbsp; Fall celebration, Break Room, 2:00 PM</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ===================== SCREEN: DIRECTORY ===================== -->
+    <section class="screen" id="directory">
+      <h2>Directory</h2>
+      <div class="people">
+        <!-- Each person opens their own detail screen: data-go="person-..." -->
+        <button class="person" data-go="person-1"><div class="avatar">AR</div>Alex Rivera<br><small>Manager</small></button>
+        <button class="person" data-go="person-2"><div class="avatar">JK</div>Jordan Kim<br><small>Coordinator</small></button>
+        <button class="person" data-go="person-3"><div class="avatar">SP</div>Sam Patel<br><small>Specialist</small></button>
+      </div>
+    </section>
+
+    <!-- Detail screens (level 2). "Back" returns to Directory. -->
+    <section class="screen" id="person-1">
+      <h2>Alex Rivera</h2>
+      <div class="panel"><p><b>Role:</b> Department Manager</p><p><b>Office:</b> Room 122</p><p><b>Ext:</b> 4100</p></div>
+    </section>
+    <section class="screen" id="person-2">
+      <h2>Jordan Kim</h2>
+      <div class="panel"><p><b>Role:</b> Program Coordinator</p><p><b>Office:</b> Room 124</p><p><b>Ext:</b> 4102</p></div>
+    </section>
+    <section class="screen" id="person-3">
+      <h2>Sam Patel</h2>
+      <div class="panel"><p><b>Role:</b> Technical Specialist</p><p><b>Office:</b> Room 126</p><p><b>Ext:</b> 4104</p></div>
+    </section>
+
+    <!-- ===================== SCREEN: MAP ===================== -->
+    <section class="screen" id="map">
+      <h2>Floor Map</h2>
+      <div class="map">
+        <div class="room here" style="left:4%;  top:62%; width:18%; height:30%;">You are here</div>
+        <div class="room"      style="left:4%;  top:8%;  width:28%; height:44%;">Conference A</div>
+        <div class="room"      style="left:36%; top:8%;  width:20%; height:44%;">Room 120</div>
+        <div class="room"      style="left:60%; top:8%;  width:36%; height:44%;">Training Room</div>
+        <div class="room"      style="left:60%; top:62%; width:36%; height:30%;">Break Room</div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <button class="navbtn" id="homeBtn" data-go="home" hidden>Home</button>
+    <button class="navbtn secondary" id="backBtn" hidden>&larr; Back</button>
+    <span id="idleHint">Touch the screen to explore</span>
+  </footer>
+</div>
+
+<script>
+  /* ================= SETTINGS ================= */
+  var IDLE_SECONDS = 60;      // return to Home after this many seconds with no touch
+  var HOME_SCREEN  = "home";  // id of the start screen
+
+  /* ================= NAVIGATION ================= */
+  var navStack = [];          // screens visited, so Back works
+  var current = HOME_SCREEN;
+
+  function show(id, isBack) {
+    var next = document.getElementById(id);
+    if (!next || id === current) return;
+    if (!isBack) navStack.push(current);
+    document.getElementById(current).classList.remove("active");
+    next.classList.add("active");
+    current = id;
+    if (id === HOME_SCREEN) navStack = [];
+    // Home/Back buttons only appear when you are NOT on Home
+    document.getElementById("homeBtn").hidden = (id === HOME_SCREEN);
+    document.getElementById("backBtn").hidden = (id === HOME_SCREEN);
+  }
+
+  function goBack() {
+    var prev = navStack.pop() || HOME_SCREEN;
+    show(prev, true);
+  }
+
+  /* One listener handles every button with data-go="..."
+     "click" fires for a finger tap on BrightSign touch screens and for a mouse on a PC. */
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-go]");
+    if (btn) show(btn.getAttribute("data-go"));
+  });
+  document.getElementById("backBtn").addEventListener("click", goBack);
+
+  /* ================= TOUCH FEEDBACK ================= */
+  // Darken a button while it is being pressed so users know the touch registered.
+  ["pointerdown", "touchstart", "mousedown"].forEach(function (evt) {
+    document.addEventListener(evt, function (e) {
+      var b = e.target.closest("button");
+      if (b) b.classList.add("pressed");
+    }, { passive: true });
+  });
+  ["pointerup", "pointercancel", "touchend", "mouseup"].forEach(function (evt) {
+    document.addEventListener(evt, function () {
+      document.querySelectorAll(".pressed").forEach(function (b) { b.classList.remove("pressed"); });
+    }, { passive: true });
+  });
+
+  /* ================= IDLE TIMEOUT ================= */
+  var idleTimer;
+  function resetIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { show(HOME_SCREEN); navStack = []; }, IDLE_SECONDS * 1000);
+  }
+  ["pointerdown", "touchstart", "mousedown", "keydown"].forEach(function (evt) {
+    document.addEventListener(evt, resetIdle, { passive: true });
+  });
+  resetIdle();
+
+  /* ================= CLOCK ================= */
+  function tick() {
+    var d = new Date();
+    document.getElementById("clock").textContent =
+      d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }) + "  " +
+      d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  tick(); setInterval(tick, 15000);
+
+  /* Block right-click / long-press menus on the kiosk */
+  document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+</script>
+</body>
+</html>
